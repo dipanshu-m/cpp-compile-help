@@ -6,7 +6,7 @@
 
 # Function to display help
 display_help() {
-    echo "Usage: ./run_cpp.sh [options] <filename.cpp>"
+    echo "Usage: ./compile_cpp.sh [options] <filename.cpp>"
     echo
     echo "Options:"
     echo "  -h, --help        Show this help message"
@@ -16,8 +16,8 @@ display_help() {
     echo "maximum memory limit of 512 MB."
     echo
     echo "Examples:"
-    echo "  ./run_cpp.sh my_program.cpp"
-    echo "  ./run_cpp.sh --help"
+    echo "  ./compile_cpp.sh path/to/my_cpp_program.cpp"
+    echo "  ./compile_cpp.sh --help"
     exit 0
 }
 
@@ -45,10 +45,13 @@ if [ ! -f "$file" ]; then
     exit 1
 fi
 
-
 # Get the directory and base filename without extension
 dir=$(dirname "$file")
 base=$(basename "$file" .cpp)  # Change .cpp to match your file extension if different
+
+#modify time and memory limits
+time_limit=5 # min: 1, max: 100
+memory_limit=524288 #min: 100, max: 2097152
 
 # Create bin directory if it doesn't exist
 mkdir -p "$dir/bin"
@@ -61,7 +64,7 @@ if [ $? -eq 0 ]; then
     # echo "Compilation successful. Running the program..."
 
     # Set the maximum memory limit to 512MB
-    ulimit -v 524288  # 512 MB in KB
+    ulimit -v $memory_limit  # 512 MB in KB
 
     # Get the current process ID
     current_pid=$$
@@ -72,7 +75,7 @@ if [ $? -eq 0 ]; then
     start=$(($(date +%s%N)/1000000))  # Get the start time in milliseconds
 
     # Run the program with a timeout of 5 seconds
-    output=$(timeout 5 "$dir/bin/$base.out" 2>&1)  # Run the program with a timeout of 5 seconds
+    output=$(timeout $time_limit "$dir/bin/$base.out" 2>&1)  # Run the program with a timeout of 5 seconds
     exit_code=$?  # Capture the exit code
 
     # End timing
@@ -118,7 +121,12 @@ if [ $? -eq 0 ]; then
     
     # Clean up the output file
     rm "$dir/bin/$base.out"  # Delete the output file after execution
+else
+    echo -e "${RED}Compilation failed.${RESET}"
+fi
 
-    else
-        echo -e "${RED}Compilation failed.${RESET}"
-    fi
+# After handling the output and before exiting
+if [ -d "$dir/bin" ] && [ -z "$(ls -A "$dir/bin")" ]; then
+    rmdir "$dir/bin"
+    # echo -e "Removed empty bin folder"
+fi
