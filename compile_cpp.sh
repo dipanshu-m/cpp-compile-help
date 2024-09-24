@@ -4,6 +4,22 @@
 # @author: Dipanshu Mahato
 # @email: d1p@duck.com
 
+# ANSI color codes
+RED="\033[31m"
+GREEN="\033[32m"
+RESET="\033[0m"
+ITALIC="\033[3m"
+YELLOW="\033[33m"
+
+# Check if the filename is provided
+if [ $# -eq 0 ]; then
+    echo -e "${RED}Error: No filename provided${RESET}"
+    display_help
+    exit 1
+fi
+
+file="$1"  # The first argument is the C++ file to run  
+
 # Function to display help
 display_help() {
     echo "Usage: ./compile_cpp.sh [options] <filename.cpp>"
@@ -21,112 +37,115 @@ display_help() {
     exit 0
 }
 
+# Get the directory and base filename without extension
+dir=$(dirname "$file")
+base=$(basename "$file" .cpp)  # Change .cpp to match your file extension if different
+
+# Modify time and memory limits here
+time_limit=5 # min: 1, max: 100 (in sec)
+memory_limit=524288 # min: 100, max: 2097152 (in kBs)
+max_file_size=5242880 # 5 MB in bytes
+
+# Delete binaries and its directory if its empty
+cleanup() {
+    rm "$dir/bin/$base.out"  # Delete the output file after execution
+    
+    if [ -d "$dir/bin" ] && [ -z "$(ls -A "$dir/bin")" ]; then # Check and delete if bin is empty
+        rmdir "$dir/bin"
+    fi
+}
+
 # Check for help flag
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     display_help
 fi
 
-RED="\033[31m"
-GREEN="\033[32m"
-RESET="\033[0m"
-ITALIC="\033[3m"
-YELLOW="\033[33m"
-
-if [ $# -eq 0 ]; then
-    echo -e "${RED}Error: No filename provided${RESET}"
-    display_help
-    exit 1
-fi
-
-file="$1"  # The first argument is the C++ file to run  
-
+# Check if the file exists
 if [ ! -f "$file" ]; then
     echo -e "${RED}Error: Cannot find '$file': No such file or directory${RESET}"
     exit 1
 fi
 
-# Get the directory and base filename without extension
-dir=$(dirname "$file")
-base=$(basename "$file" .cpp)  # Change .cpp to match your file extension if different
+file_size=$(stat -c%s "$file") # File size in bytes
 
-#modify time and memory limits
-time_limit=5 # min: 1, max: 100
-memory_limit=524288 #min: 100, max: 2097152
+# Check if the file exceeds the maximum allowed size
+if [ "$file_size" -gt "$max_file_size" ]; then
+    echo -e "${RED}Error: File size exceeds 5 MB (${file_size} bytes). Exiting.${RESET}"
+    
+    exit 1
+fi
 
 # Create bin directory if it doesn't exist
 mkdir -p "$dir/bin"
 
 # Compile the C++ file using g++
-g++ -std=c++17 "$file" -o "$dir/bin/$base.out"
+g++ -std=c++17 -fsanitize=address -g "$file" -o "$dir/bin/$base.out"
 
-# Check if compilation was successful
-if [ $? -eq 0 ]; then
-    # echo "Compilation successful. Running the program..."
-
-    # Set the maximum memory limit to 512MB
-    ulimit -v $memory_limit  # 512 MB in KB
-
-    # Get the current process ID
-    current_pid=$$
-
-    # echo "Current Process ID: $current_pid"
-
-    # Start timing
-    start=$(($(date +%s%N)/1000000))  # Get the start time in milliseconds
-
-    # Run the program with a timeout of 5 seconds
-    output=$(timeout $time_limit "$dir/bin/$base.out" 2>&1)  # Run the program with a timeout of 5 seconds
-    exit_code=$?  # Capture the exit code
-
-    # End timing
-    end=$(($(date +%s%N)/1000000))  # Get the end time in milliseconds
-
-    # Calculate elapsed time in milliseconds
+if [ $? -eq 0 ]; then # compilation successful
+    start=$(date +%s%N) # Start time
+    
+    "$dir/bin/$base.out" & # Run the compiled program 
+    pid=$!  # Get the process ID of the last background command
+    
+    memory=0
+    # Monitor the process
+    while kill -0 $pid 2>/dev/null; do
+        # Get the memory usage of the process
+        m=$(cat /proc/$pid/status | grep VmRSS | awk '{print $2}')
+        if [ $m -gt $memory ]; then
+            memory=$m
+        fi
+        # echo $memory $m
+        
+        # Check elapsed time
+        elapsed=$(( ($(date +%s%N) - start) / 1000000 ))  # Convert to milliseconds
+        if [ $elapsed -ge $((time_limit * 1000)) ]; then
+            kill -15 $pid  # Terminate if TLE
+            echo ""
+            echo -e "${RED}TLE: Time limit exceeded${RESET}"
+            
+            cleanup  # Clean up
+            exit 1
+        elif [ $memory -ge $memory_limit ]; then
+            kill -15 $pid  # Terminate if MLE
+            echo ""
+            echo -e "${RED}MLE: Memory limit exceeded${RESET}"
+            
+            cleanup  # Clean up
+            exit 1
+        fi
+        sleep 0.1  # Sleep for a short time to avoid busy waiting
+    done
+    
+    wait $pid
+    
+    # Capture the exit status after the process ends
+    status=$?
+    
+    if [ $status -ne 0 ]; then
+        echo ""
+        echo -e "${RED}RE: Runtime error${RESET}"
+        
+        cleanup  # Clean up
+        exit 1
+    fi
+    
+    end=$(date +%s%N)
+    # Calculate real time
     elapsed=$((end - start))
-
-    # Check if the program timed out
-    # 
-    if [ -f core ]; then
-        echo -e "${RED}Error: The program crashed and created a core dump.${RESET}"
-        echo "You can analyze the core dump with gdb."
-        rm core >/dev/null 2>&1  # Remove core dump file after handling, suppress output
-    elif [ $exit_code -eq 124 ]; then
-        echo -e ${RED}"TLE: Time Limit Exceeded"${RESET}
-    elif [ $exit_code -eq 139 ]; then
-        echo -e "${RED}MLE: Memory Limit Exceeded.${RESET}"
-    elif [ $exit_code -ne 0 ]; then
-        echo -e "${RED}$output${RESET}"
-        echo -e "${RED}Program terminated with exit code: $exit_code${RESET}"
-    else
-        # Print the output of the program
-        if [ -n "$output" ]; then
-                echo "$output"
-        fi
-        # Display the execution time
-        # echo "Execution time: ${elapsed} ms"
-        echo -e "${GREEN}Execution Time: ${elapsed} ms${RESET}"
     
-        # Display memory usage
-        mem_usage=$(ps -o rss= -p $current_pid)  # Get the memory usage of the last process
-        # Convert KB to MB if greater than 1024
-        if [ "$mem_usage" -gt 1024 ]; then
-            mem_usage_mb=$((mem_usage / 1024))  # Integer division in bash
-            mem_usage_decimal=$(( (mem_usage % 1024) * 100 / 1024 ))  # Calculate decimal part
-            # echo "Memory used: ${mem_usage_mb}.${mem_usage_decimal} MB"
-            echo -e "${GREEN}Memory Used: ${mem_usage_mb}.${mem_usage_decimal} MB${RESET}"
-        else
-            echo "${GREEN}Memory used: ${mem_usage} KB${RESET}"
-        fi
-    fi  
+    real_time_ms=$((elapsed / 1000000))  # Convert to milliseconds
+    real_time_s=$((elapsed / 1000000000))  # Convert to seconds
     
-    # Clean up the output file
-    rm "$dir/bin/$base.out"  # Delete the output file after execution
-else
+    echo ""
+    echo -e "${GREEN}Executed${RESET}"
+    echo -e "${YELLOW}Memory: ${memory} KB${RESET}"
+    echo -e "${YELLOW}Real time: ${real_time_s}.${real_time_ms}s${RESET}"
+    
+    cleanup  # Delete the output file after execution
+    exit 0
+else # compilation failed
+    echo ""
     echo -e "${RED}Compilation failed.${RESET}"
-fi
-
-# After handling the output and before exiting
-if [ -d "$dir/bin" ] && [ -z "$(ls -A "$dir/bin")" ]; then
-    rmdir "$dir/bin"
-    # echo -e "Removed empty bin folder"
+    exit 1
 fi
