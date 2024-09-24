@@ -68,13 +68,13 @@ To personalize this tool upon your needs, you may perform following operations.
 ### Set Time Limit
 By default it is 5 seconds, you may reduce it to 1 second, or maybe 2 seconds, depending upon you.
 To modify:
-* Find this line `time_limit=5` (line 54)
+* Find this line `time_limit=5` (line 45)
 * Now, modify `5` to any other **integer value > 1**. where the unit is **seconds**.
 
 ### Set Memory Limit
 By default it is 512MB, you may reduce it to 128MB , or maybe 256MB, depending upon you
 To modify:
-* Find this line: `memory_limit=524288` (line 55)
+* Find this line: `memory_limit=524288` (line 46)
 * Now, modify `524288` to any other **integer value > 100**. where the unit is **kilobytes**.
 
 ## Contributing to this tool
