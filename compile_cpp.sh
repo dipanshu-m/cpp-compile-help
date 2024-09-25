@@ -82,6 +82,8 @@ mkdir -p "$dir/bin"
 g++ -std=c++17 -fsanitize=address -g "$file" -o "$dir/bin/$base.out"
 
 if [ $? -eq 0 ]; then # compilation successful
+    export ASAN_OPTIONS=detect_leaks=0  # Disable leak detection for ASan (not freeing memory will not cause an error)
+    
     start=$(date +%s%N) # Start time
     
     "$dir/bin/$base.out" & # Run the compiled program 
@@ -139,8 +141,9 @@ if [ $? -eq 0 ]; then # compilation successful
     
     echo ""
     echo -e "${GREEN}Executed${RESET}"
+    echo -e "${YELLOW}Time Taken: ${real_time_s}.${real_time_ms}s${RESET}"
+    # TODO: Implement MB conversion
     echo -e "${YELLOW}Memory: ${memory} KB${RESET}"
-    echo -e "${YELLOW}Real time: ${real_time_s}.${real_time_ms}s${RESET}"
     
     cleanup  # Delete the output file after execution
     exit 0
@@ -149,3 +152,5 @@ else # compilation failed
     echo -e "${RED}Compilation failed.${RESET}"
     exit 1
 fi
+
+# TODO: Add support for input redirection and output redirection
