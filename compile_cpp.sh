@@ -40,6 +40,7 @@ display_help() {
 # Get the directory and base filename without extension
 dir=$(dirname "$file")
 base=$(basename "$file" .cpp)  # Change .cpp to match your file extension if different
+input_file="$dir/input_$base.txt" # Input file
 
 # Modify time and memory limits here
 time_limit=5 # min: 1, max: 100 (in sec)
@@ -52,6 +53,10 @@ cleanup() {
     
     if [ -d "$dir/bin" ] && [ -z "$(ls -A "$dir/bin")" ]; then # Check and delete if bin is empty
         rmdir "$dir/bin"
+    fi
+    # if file size 0 then delete input file
+    if [ -f "$input_file" ] && [ ! -s "$input_file" ]; then
+        rm "$input_file"
     fi
 }
 
@@ -77,16 +82,22 @@ fi
 
 # Create bin directory if it doesn't exist
 mkdir -p "$dir/bin"
+# create input file if it doesn't exist
+if [ ! -f $input_file ]; then
+    touch $input_file
+    echo -e "${YELLOW}Input file created. Now paste your input: $input_file${RESET}"
+    exit 0
+fi
 
 # Compile the C++ file using g++
-g++ -std=c++17 -fsanitize=address -g "$file" -o "$dir/bin/$base.out"
+g++ -std=c++17 -fsanitize=address -g "$file" -O2 -o "$dir/bin/$base.out"
 
 if [ $? -eq 0 ]; then # compilation successful
     export ASAN_OPTIONS=detect_leaks=0  # Disable leak detection for ASan (not freeing memory will not cause an error)
     
     start=$(date +%s%N) # Start time
     
-    "$dir/bin/$base.out" & # Run the compiled program 
+    "$dir/bin/$base.out" < $input_file & # Run the compiled program 
     pid=$!  # Get the process ID of the last background command
     
     memory=0
@@ -141,6 +152,7 @@ if [ $? -eq 0 ]; then # compilation successful
     
     echo ""
     echo -e "${GREEN}Executed${RESET}"
+    # TODO: Implement ms conversion
     echo -e "${YELLOW}Time Taken: ${real_time_s}.${real_time_ms}s${RESET}"
     # TODO: Implement MB conversion
     echo -e "${YELLOW}Memory: ${memory} KB${RESET}"
@@ -153,4 +165,4 @@ else # compilation failed
     exit 1
 fi
 
-# TODO: Add support for input redirection and output redirection
+# TODO: Add support for output redirection
